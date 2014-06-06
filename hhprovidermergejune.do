@@ -16,7 +16,7 @@ global sh_root `"/Users/truskinovsky/Dropbox/Karnataka Providers Incentives Expe
 
 global hhold1 `"$kd_root/Household Data 04-29-2014 v12.dta"'
 global hhold3SC `"$y_root/2456 III MAIN SURVEY DEIDENTIFIED DATA.DTA"'
-global hhold3 `"$y_root/2456 III main survey deidentified dataYT.dta"'
+global hhold3 `"$y_root/2456 III main survey deidentified dataYT.dta"'  /* created lower case version of hh3SC which was sent to us in upper case */
 
 * provider data with treatment assignment
 
@@ -27,6 +27,7 @@ global provider `"$sh_root/Provider Details with Assignments/175 Providers statu
 
 global provider4merge  `"$y_root/175 Providers status cluster details.dta"'
 global hh_merge  `"$y_root/inproghousehold.dta"'
+global hh_merge5_12_14  `"$y_root/inproghousehold5_12_14.dta"'
 global hhprov_merge  `"$y_root/inproghouseholdmerge.dta"'
 
  ** log files **
@@ -62,18 +63,33 @@ append using "$hhold3"
 
 
 save "$hh_merge", replace
-
+save "$hh_merge5_12_14", replace
 count
+
+
+
+**2.5 addressing data issues re Anil email 6-01 "questions from latest IMACHINE data transfer":
+
+/*
+ 
+Wrong ID                               Corrected ID                                       Date of Delivery                                 Date of Interview
+  AWW0855001                      AWW0855002                                   11/04/2014                                          15/4/2014
+  PM15105202                          PA15105202                                     8/4/2014                                              21/04/2014
+
+*/
+
+
+replace r_id = "AWW0855002" if r_id == "AWW0855001" & q111add == 11 & q111amm == 4 & q111ayy == 2014
+replace r_id = "PA15105202" if r_id == "PM15105202" & q111add == 8 & q111amm == 4 & q111ayy == 2014
+
+
+
+
 	* r_id is unique id?
 
 	isid r_id
     
-    
-    duplicates list r_id
-    /*
-     AWW0855001
-     PM15105202
-	*/
+   
 
 ** 3.0 hh and provider data merge: delivery provider**
 ************************************
@@ -88,16 +104,29 @@ cap drop check
 gen check = 1 if q09b2 == 1 &  q113 == 1
 
 list r_id if check ==1 
-list r_id q09b2 q113 q113e q303e q1304ee q114 q401 if check ==1, noobs nocompress t 
-
-
+list r_id q113e q303e q1304ee if check ==1
 
 tab q09b2 q09c2
 * 2 deliveries identified neither by patient or population listing
 cap drop check2 
-gen check2 = 1 if q09b2 == 2 &  q09c2 == 2
+gen check2 = 1 if q09b2  == 2 &  q09c2  == 2
 tab q113 if check2 == 1
-list r_id q113 if check2 == 1 /* based on r_id, looks like a typo */
+list r_id q113 q09b2 q09c2 if check2 == 1 
+/* based on r_id, looks like a typo */
+/*
+correction
+
+ 
+     |        r_id       q113 |       Identified in patient list        Identified in population list
+      |------------------------|------------------------------------------------------------------------
+4733. | PF240411024   pvt. hos |                1                                 2
+5945. |  POP1490320   pvt. hos |                2                                 1   
+*/
+
+replace q09b2 = 1 if r_id == "PF240411024"
+replace q09c2 = 1 if r_id == "POP1490320"
+
+tab q09b2 q09c2
 
 
 * ANC care:
@@ -119,8 +148,16 @@ tab q1304ee q09b2 if (q1304ee == q113e) & !mi(q1304ee)
 
 * all 3: 
 count if (q303e == q1304ee == q113e)  
+* delivery and ANC :
 
-tab q113
+tab q303e, m
+gen ANC = 1 if !mi(q303e) & q303e > 0
+
+
+tab q113e
+gen DEL = 1 if !mi(q113e) & q113e > 0
+
+
 
 ** 4.0: merging with provider info: **
 **************************************
@@ -148,7 +185,7 @@ merge m:1 U_ID using "$provider4merge", update replace
 
 * 16 women are not matched to a provider, and 33 providers don't have any women matched to them 
 * who are the 16 women who are not matched:
-list r_id U_ID q09b2 if _merge == 1
+list r_id U_ID q09b2 if _merge == 1, noobs
 
 * number of women per provider: 
 cap drop provdeliveries
@@ -174,7 +211,7 @@ cap drop U_ID
 gen U_ID = q1304ee 
 sort U_ID
 merge m:1 U_ID using "$provider4merge", update replace
-list r_id U_ID q09b2 IIVisitStatus if _merge == 1
+list r_id U_ID q09b2  if _merge == 1, noobs
 
 * 77 providers have no post natal care women, and 7 women have a provider number that doesn't match to a provider. 
 * of the 7, 6 were identified using the patient list
